@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Huzz guesser</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Huzz guesser home"><span class="brand-mark">HG</span><span>Huzz guesser</span></a>
+    </header>
+    <section class="hero" id="top">
+      <div class="hero-copy"><p class="eyebrow">Drop a file to guess the huzz></p></h1></div>
+      <div class="hero-note"><span class="note-number">01</span><span>Your folder names become the model's labels.</span></div>
+    </section>
+    <nav class="mode-tabs" aria-label="Classifier workflow">
+      <button class="mode-tab is-active" data-mode="train" type="button"><span>01</span> Build your dataset</button>
+      <button class="mode-tab" data-mode="predict" type="button"><span>02</span> Test your model</button>
+    </nav>
+    <section class="workspace mode-panel is-visible" data-panel="train" aria-label="Train a model">
+      <div class="upload-column">
+        <input id="dataset-input" type="file" accept=".zip,application/zip" hidden />
+        <div class="drop-zone" id="dataset-drop-zone" tabindex="0" role="button" aria-controls="dataset-input"><div class="drop-icon" aria-hidden="true"><span></span><span></span><span></span></div><p class="drop-title">Drop your dataset ZIP</p><p class="drop-subtitle">or <button class="browse-button" id="dataset-browse" type="button">browse files</button></p><p class="drop-meta">one folder per label <span>/</span> ZIP only</p></div>
+        <div class="dataset-card" id="dataset-card" hidden><div class="dataset-card-top"><div><p class="file-name" id="dataset-name"></p><p class="file-size" id="dataset-size"></p></div><button class="remove-button" id="dataset-remove" type="button" aria-label="Remove dataset">x</button></div><div class="class-list" id="class-list"></div></div>
+        <div class="training-controls"><label for="epochs">Training passes <span id="epoch-value">10</span></label><input id="epochs" type="range" min="1" max="50" value="10" /></div>
+        <button class="guess-button" id="train-button" type="button" disabled><span>Train my model</span><span class="button-arrow">-&gt;</span></button><p class="feedback" id="train-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <aside class="result-panel guidance-panel"><div class="panel-heading"><p class="eyebrow">Dataset recipe</p><span class="output-index">02</span></div><div class="recipe"><div class="folder-tree"><span>my-dataset/</span><span class="tree-child">/ cats/</span><span class="tree-child">/ dogs/</span><span class="tree-child">/ anything-you-name/</span></div><p>Each folder is a class. Put at least 10 varied images in every folder for a useful first model.</p></div><div class="tip"><span>TIP</span> Keep the background and framing varied so the model learns the subject, not just the wallpaper.</div></aside>
+    </section>
+    <section class="workspace mode-panel" data-panel="predict" aria-label="Test the model" hidden>
+      <div class="upload-column">
+        <input id="image-input" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+        <div class="drop-zone" id="image-drop-zone" tabindex="0" role="button" aria-controls="image-input"><div class="drop-icon" aria-hidden="true"><span></span><span></span><span></span></div><p class="drop-title">Drop an image to classify</p><p class="drop-subtitle">or <button class="browse-button" id="image-browse" type="button">browse files</button></p><p class="drop-meta">JPG, PNG, WEBP <span>/</span> max 10 MB</p></div>
+        <div class="preview-card" id="preview-card" hidden><div class="preview-image-wrap"><img id="preview-image" alt="Selected image preview" /><button class="remove-button" id="image-remove" type="button" aria-label="Remove image">x</button></div><div class="file-details"><div><p class="file-name" id="image-name"></p><p class="file-size" id="image-size"></p></div><span class="ready-pill">Ready</span></div></div>
+        <button class="guess-button" id="predict-button" type="button" disabled><span>Ask the model</span><span class="button-arrow">-&gt;</span></button><p class="feedback" id="predict-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <aside class="result-panel" aria-live="polite"><div class="panel-heading"><p class="eyebrow">Model output</p><span class="output-index">03</span></div><div class="result-empty" id="result-empty"><div class="target-icon"></div><h2>Your label<br />will land here.</h2><p>Train a model first, then upload an image to see its ranked predictions.</p></div><div class="result-content" id="result-content" hidden><p class="result-label">Top prediction</p><h2 id="result-name">Waiting...</h2><div class="confidence-line"><span>Confidence</span><strong id="result-confidence">--</strong></div><div class="confidence-track"><span id="confidence-bar"></span></div><div class="alternatives" id="alternatives"></div></div></aside>
+    </section>
+    <footer class="footer"><span>Folders in. Labels out.</span><span>Train locally with YOLO.</span></footer>
+  </main>
+  <script>
+    const endpoint = window.CLASSIFIER_ENDPOINT || "";
+    const $ = (selector) => document.querySelector(selector);
+    let datasetFile = null;
+    let imageFile = null;
+    let previewUrl = null;
+    function feedback(target, message, kind = "") { target.textContent = message; target.className = `feedback ${kind}`; }
+    function bytes(value) { return `${(value / 1024 / 1024).toFixed(1)} MB`; }
+    function dropBehavior(zone, input, onFile) {
+      ["dragenter", "dragover"].forEach((name) => zone.addEventListener(name, (event) => { event.preventDefault(); zone.classList.add("is-dragging"); }));
+      ["dragleave", "drop"].forEach((name) => zone.addEventListener(name, (event) => { event.preventDefault(); zone.classList.remove("is-dragging"); }));
+      zone.addEventListener("drop", (event) => onFile(event.dataTransfer.files[0]));
+      zone.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") input.click(); });
+      input.addEventListener("change", (event) => onFile(event.target.files[0]));
+    }
+    function setDataset(file) {
+      if (!file || !file.name.toLowerCase().endsWith(".zip")) { feedback($("#train-feedback"), "Please upload a ZIP with one folder per label.", "error"); return; }
+      datasetFile = file; $("#dataset-card").hidden = false; $("#dataset-name").textContent = file.name; $("#dataset-size").textContent = bytes(file.size); $("#train-button").disabled = false; $("#dataset-drop-zone").classList.add("has-file"); $("#class-list").innerHTML = `<span class="class-count">ZIP ready</span><span>Folders will become labels after upload.</span>`; feedback($("#train-feedback"), "Dataset ready. Choose your training passes.");
+    }
+    function clearDataset() { datasetFile = null; $("#dataset-input").value = ""; $("#dataset-card").hidden = true; $("#train-button").disabled = true; $("#dataset-drop-zone").classList.remove("has-file"); feedback($("#train-feedback"), ""); }
+    function setImage(file) {
+      if (!file || !file.type.startsWith("image/")) { feedback($("#predict-feedback"), "Please choose a JPG, PNG, or WEBP image.", "error"); return; }
+      if (file.size > 10 * 1024 * 1024) { feedback($("#predict-feedback"), "That image is over the 10 MB limit.", "error"); return; }
+      if (previewUrl) URL.revokeObjectURL(previewUrl); imageFile = file; previewUrl = URL.createObjectURL(file); $("#preview-image").src = previewUrl; $("#image-name").textContent = file.name; $("#image-size").textContent = bytes(file.size); $("#preview-card").hidden = false; $("#predict-button").disabled = false; feedback($("#predict-feedback"), "Image ready. Ask the model for a label.");
+    }
+    function clearImage() { imageFile = null; $("#image-input").value = ""; $("#preview-card").hidden = true; $("#predict-button").disabled = true; feedback($("#predict-feedback"), ""); }
+    $("#epochs").addEventListener("input", (event) => $("#epoch-value").textContent = event.target.value);
+    $("#dataset-browse").addEventListener("click", () => $("#dataset-input").click()); $("#dataset-remove").addEventListener("click", clearDataset); dropBehavior($("#dataset-drop-zone"), $("#dataset-input"), setDataset);
+    $("#image-browse").addEventListener("click", () => $("#image-input").click()); $("#image-remove").addEventListener("click", clearImage); dropBehavior($("#image-drop-zone"), $("#image-input"), setImage);
+    document.querySelectorAll(".mode-tab").forEach((tab) => tab.addEventListener("click", () => { document.querySelectorAll(".mode-tab").forEach((item) => item.classList.remove("is-active")); document.querySelectorAll(".mode-panel").forEach((panel) => { panel.hidden = panel.dataset.panel !== tab.dataset.mode; panel.classList.toggle("is-visible", panel.dataset.panel === tab.dataset.mode); }); tab.classList.add("is-active"); }));
+    $("#train-button").addEventListener("click", async () => { const button = $("#train-button"); if (!datasetFile) return; button.disabled = true; button.classList.add("is-loading"); feedback($("#train-feedback"), "Training is running. This can take a few minutes..."); const form = new FormData(); form.append("dataset", datasetFile); form.append("epochs", $("#epochs").value); try { const response = await fetch(`${endpoint}/train`, { method: "POST", body: form }); if (!response.ok) throw new Error((await response.json()).detail || "Training failed"); const result = await response.json(); feedback($("#train-feedback"), `${result.classes.length} classes trained. Your model is ready to test.`, "success"); $("[data-mode='predict']").click(); } catch (error) { feedback($("#train-feedback"), error.message || "Start the local classifier server first.", "error"); } finally { button.disabled = false; button.classList.remove("is-loading"); } });
+    $("#predict-button").addEventListener("click", async () => { const button = $("#predict-button"); if (!imageFile) return; button.disabled = true; button.classList.add("is-loading"); feedback($("#predict-feedback"), "The model is looking closely..."); const form = new FormData(); form.append("file", imageFile); try { const response = await fetch(`${endpoint}/predict`, { method: "POST", body: form }); if (!response.ok) throw new Error((await response.json()).detail || "Prediction failed"); renderResult(await response.json()); feedback($("#predict-feedback"), "Prediction complete.", "success"); } catch (error) { feedback($("#predict-feedback"), error.message || "Train a model before classifying images.", "error"); } finally { button.disabled = false; button.classList.remove("is-loading"); } });
+    function renderResult(data) { const confidence = Number(data.confidence || 0); const percent = confidence <= 1 ? confidence * 100 : confidence; $("#result-empty").hidden = true; $("#result-content").hidden = false; $("#result-name").textContent = (data.label || "Unknown").replaceAll("_", " "); $("#result-confidence").textContent = `${percent.toFixed(1)}%`; $("#confidence-bar").style.width = `${Math.min(100, percent)}%`; $("#alternatives").innerHTML = (data.predictions || []).slice(1).map((item) => { const score = Number(item.confidence || 0); return `<div class="alternative"><span>${item.label.replaceAll("_", " ")}</span><strong>${(score <= 1 ? score * 100 : score).toFixed(1)}%</strong></div>`; }).join(""); }
+  </script>
+</body>
+</html>
